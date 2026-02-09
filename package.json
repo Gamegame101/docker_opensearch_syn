@@ -1,0 +1,16 @@
+{
+  "name": "opensearch-sync-job",
+  "version": "1.0.0",
+  "description": "Cronjob: Sync Supabase → S3 → OpenSearch → Mark synced. Runs once then exits.",
+  "main": "06_orchestrate.js",
+  "scripts": {
+    "start": "node 06_orchestrate.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.967.0",
+    "@aws-sdk/credential-providers": "^3.967.0",
+    "@opensearch-project/opensearch": "^3.3.0",
+    "@supabase/supabase-js": "^2.39.0",
+    "dotenv": "^17.2.3"
+  }
+}
