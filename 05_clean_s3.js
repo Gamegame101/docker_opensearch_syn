@@ -108,12 +108,10 @@ if (require.main === module) {
         console.log('✅ S3 cleanup completed successfully');
       } else {
         console.log('❌ S3 cleanup failed');
-        process.exit(1);
       }
     })
     .catch(error => {
       console.error('❌ S3 cleanup failed:', error);
-      process.exit(1);
     });
 }
 

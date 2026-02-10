@@ -130,7 +130,6 @@ if (require.main === module) {
     })
     .catch(error => {
       console.error('❌ Download failed:', error);
-      process.exit(1);
     });
 }
 

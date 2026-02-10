@@ -43,11 +43,12 @@ async function saveTimestampLog(summary) {
 // Main orchestration function
 async function orchestrate() {
   try {
+    console.log('🔍 Orchestrate function started');
     const workflowId = Date.now().toString(36);
+    const startTime = new Date();
+    
     console.log(`🚀 Starting complete sync orchestration... [workflow: ${workflowId}]`);
     console.log('📊 Plan: Download → Sync → Test → Mark → Clean → Log');
-    
-    const startTime = new Date();
     
     // Step 1: Download
     console.log('\n📥 Step 1: Download from Supabase to S3');
@@ -105,15 +106,77 @@ async function orchestrate() {
     if (!currentTestResult.success) {
       console.log('⚠️ Test still not perfect after retries, but continuing with mark step...');
       console.log(`📊 Records synced so far — proceeding to mark as synced`);
+      
+      // 🚨 CRITICAL ALERT: Missing records detected
+      if (currentTestResult.missing && currentTestResult.missing > 0) {
+        console.error(`🚨🚨🚨 CRITICAL ALERT: ${currentTestResult.missing} records missing from OpenSearch!`);
+        console.error(`🚨 Expected: ${currentTestResult.totalRecords + currentTestResult.missing}, Actual: ${currentTestResult.totalRecords}`);
+        console.error(`🚨 This indicates data loss or sync issues - requires immediate attention!`);
+        console.error(`🚨 Check OpenSearch index and consider manual resync if needed`);
+        
+        // Add to summary for monitoring
+        currentTestResult.criticalMissing = currentTestResult.missing;
+      }
     }
     
-    // Step 4: Mark as synced
+    // Step 4: Mark records as synced in Supabase
     console.log('\n✅ Step 4: Mark records as synced in Supabase');
-    const markResult = await markAsSynced(workflowId);
+    console.log(`🔍 Before mark: downloadResult.totalRecords=${downloadResult.totalRecords}`);
+    console.log('🔍 About to call markAsSynced...');
+    console.log('🔍 markAsSynced function:', typeof markAsSynced);
+    console.log('🔍 About to enter try block...');
+    
+    try {
+      const markResult = await markAsSynced(workflowId);
+      console.log('🔍 markAsSynced returned successfully');
+      console.log(`🔍 After mark: markResult.success=${markResult.success}, error="${markResult.error}"`);
+      
+      // Special case: No new data to sync is SUCCESS
+      console.log(`🔍 Debug: markResult.success=${markResult.success}, error="${markResult.error}", downloadResult.totalRecords=${downloadResult.totalRecords}`);
+      
+      if (!markResult.success && markResult.error === 'No sync log files found' && downloadResult.totalRecords === 0) {
+      console.log('ℹ️ No new data to sync - this is a successful run');
+      // Create a successful summary for no-data case
+      const summary = {
+        workflowId,
+        timestamp: new Date().toISOString(),
+        download: downloadResult,
+        sync: syncResult,
+        test: testResult,
+        mark: { success: true, totalUpdated: 0, message: 'No new data to sync' },
+        clean: { success: true, filesDeleted: 0 },
+        success: true
+      };
+      
+      const logFilename = await saveTimestampLog(summary);
+      
+      console.log('\n🎉 No new data to sync - run completed successfully!');
+      console.log('📊 Final Results:');
+      console.log(`   📥 Downloaded: ${downloadResult.totalRecords} records`);
+      console.log(`   📤 Synced: ${syncResult.totalRecords} records`);
+      console.log(`   ✅ Test: ${testResult.success ? 'PASSED' : 'FAILED'}`);
+      console.log(`   📝 Marked: 0 records (no new data)`);
+      console.log(`   🗑️ Cleaned: 0 files`);
+      console.log(`   ⏱️ Duration: ${Math.round((new Date() - startTime) / 1000)} seconds`);
+      console.log(`   📝 Log: ${logFilename}`);
+      
+      return {
+        success: true,
+        summary,
+        logFilename
+      };
+    }
     
     if (!markResult.success) {
       console.error('❌ Mark as synced failed');
+      console.error('🔍 markResult:', JSON.stringify(markResult, null, 2));
+      console.error('🔍 About to return false from orchestrate...');
       return { success: false, step: 'mark', error: markResult.error };
+    }
+    
+    } catch (error) {
+      console.error('❌ Error in mark step:', error);
+      return { success: false, step: 'mark', error: error.message };
     }
     
     // Step 5: Clean S3
@@ -156,6 +219,14 @@ async function orchestrate() {
     console.log(`   ⏱️ Duration: ${Math.round(duration / 1000)} seconds`);
     console.log(`   📝 Log: ${logFilename}`);
     
+    // 🚨 CRITICAL: Show missing records in final summary
+    if (testResult.criticalMissing && testResult.criticalMissing > 0) {
+      console.error(`\n🚨🚨🚨 CRITICAL SUMMARY:`);
+      console.error(`   ❌ Missing Records: ${testResult.criticalMissing}`);
+      console.error(`   ❌ Data Integrity: COMPROMISED`);
+      console.error(`   ❌ Action Required: Check OpenSearch immediately`);
+    }
+    
     return {
       success: true,
       summary,
@@ -164,6 +235,8 @@ async function orchestrate() {
     
   } catch (error) {
     console.error('❌ Orchestration failed:', error);
+    console.error('🔍 Error details:', JSON.stringify(error, null, 2));
+    console.error('🔍 Error stack:', error.stack);
     return {
       success: false,
       error: error.message

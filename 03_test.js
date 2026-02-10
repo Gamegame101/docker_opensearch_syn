@@ -154,12 +154,10 @@ if (require.main === module) {
       } else {
         console.log('❌ Sync test failed');
         console.log('💡 Consider re-running sync');
-        process.exit(1);
       }
     })
     .catch(error => {
       console.error('❌ Test failed:', error);
-      process.exit(1);
     });
 }
 

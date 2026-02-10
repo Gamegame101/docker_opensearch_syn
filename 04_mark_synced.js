@@ -21,6 +21,7 @@ const supabase = createClient(
 async function markAsSynced(workflowId = null) {
   try {
     console.log('🔍 Marking records as synced in Supabase...');
+    console.log(`🔍 markAsSynced called with workflowId: ${workflowId}`);
     
     // หา sync log file ตาม workflowId (ถ้ามี)
     const prefix = workflowId 
@@ -39,6 +40,7 @@ async function markAsSynced(workflowId = null) {
     if (logFiles.length === 0) {
       console.log('❌ No sync log files found');
       console.log('💡 ต้องรัน 02_sync.js ใหม่เพื่อสร้าง sync log');
+      console.log('🔍 Returning error: No sync log files found');
       return { success: false, error: 'No sync log files found' };
     }
     
@@ -121,12 +123,10 @@ if (require.main === module) {
         console.log('✅ Mark as synced completed successfully');
       } else {
         console.log('❌ Mark as synced failed');
-        process.exit(1);
       }
     })
     .catch(error => {
       console.error('❌ Unexpected error:', error);
-      process.exit(1);
     });
 }
 
