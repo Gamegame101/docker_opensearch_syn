@@ -219,7 +219,7 @@ async function orchestrate() {
     console.log(`   📥 Downloaded: ${downloadResult.totalRecords} records`);
     console.log(`   📤 Synced: ${syncResult.totalRecords} records`);
     console.log(`   ✅ Test: ${testResult.success ? 'PASSED' : 'FAILED'}`);
-    console.log(`   📝 Marked: ${markResult.totalUpdated} records`);
+    console.log(`   📝 Marked: ${markResult?.totalUpdated || 0} records`);
     console.log(`   🗑️ Cleaned: ${cleanResult.filesDeleted} files`);
     console.log(`   ⏱️ Duration: ${Math.round(duration / 1000)} seconds`);
     console.log(`   📝 Log: ${logFilename}`);
