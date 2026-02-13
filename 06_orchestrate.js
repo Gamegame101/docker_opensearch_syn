@@ -80,6 +80,10 @@ async function orchestrate() {
     let testResult;
     let currentTestResult;
     let markResult; 
+    
+    // Call testSync first
+    currentTestResult = await testSync();
+    testResult = currentTestResult;
     console.log('🔍 testSync() result:', testResult);
     
     // Retry loop if test fails (up to 3 attempts)
