@@ -77,13 +77,14 @@ async function orchestrate() {
     // Step 3: Test
     console.log('\n🧪 Step 3: Test sync integrity');
     console.log('🔍 Calling testSync()...');
-    const testResult = await testSync();
+    let testResult;
+    let currentTestResult;
+    let markResult; 
     console.log('🔍 testSync() result:', testResult);
     
     // Retry loop if test fails (up to 3 attempts)
     let retryCount = 0;
     const MAX_RETRIES = 3;
-    let currentTestResult = testResult;
     
     while (!currentTestResult.success && retryCount < MAX_RETRIES) {
       retryCount++;
