@@ -27,6 +27,10 @@ async function testSync() {
   try {
     console.log('🧪 Testing sync integrity...');
     
+    // Force refresh to ensure all indexed docs are searchable
+    console.log('🔄 Refreshing OpenSearch index...');
+    await osClient.indices.refresh({ index: INDEX_NAME });
+    
     // Get OpenSearch count
     const osCount = await osClient.count({
       index: INDEX_NAME

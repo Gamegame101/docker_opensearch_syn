@@ -108,6 +108,9 @@ async function orchestrate() {
       console.log(`🔍 Re-test result (attempt ${retryCount}):`, currentTestResult);
     }
     
+    // Update testResult with the latest result (after retries)
+    testResult = currentTestResult;
+    
     if (!currentTestResult.success) {
       console.log('⚠️ Test still not perfect after retries, but continuing with mark step...');
       console.log(`📊 Records synced so far — proceeding to mark as synced`);
@@ -132,7 +135,7 @@ async function orchestrate() {
     console.log('🔍 About to enter try block...');
     
     try {
-      const markResult = await markAsSynced(workflowId);
+      markResult = await markAsSynced(workflowId);
       console.log('🔍 markAsSynced returned successfully');
       console.log(`🔍 After mark: markResult.success=${markResult.success}, error="${markResult.error}"`);
       
