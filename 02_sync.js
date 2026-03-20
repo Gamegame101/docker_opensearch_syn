@@ -7,12 +7,14 @@ const { S3Client, ListObjectsV2Command, GetObjectCommand, DeleteObjectCommand, P
 
 // Configuration
 const OPENSEARCH_NODE = process.env.OPENSEARCH_NODE;
-const INDEX_NAME = 'pageseeker_response_opensearch';
+const INDEX_NAME = 'pageseeker_response_opensearch_v2';
 const S3_BUCKET = process.env.S3_BUCKET || 'scamtify-pageseeker-data';
 const S3_REGION = process.env.S3_REGION || 'ap-southeast-1';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const INITIAL_BATCH_SIZE = 25;
 const MAX_PAYLOAD_MB = 2;
 const MAX_RETRIES = 5;
+const MAX_TEXT_CHARS = 6000; // stay safely under 8192 token limit
 
 // Initialize clients
 const signer = new AwsSigv4Signer({
@@ -29,6 +31,45 @@ const osClient = new Client({
 
 const s3Client = new S3Client({ region: S3_REGION });
 
+// Embedding: generate for a single text via OpenAI
+async function getEmbedding(text, retryCount = 0) {
+  try {
+    const resp = await fetch('https://api.openai.com/v1/embeddings', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({ model: 'text-embedding-3-small', input: text })
+    });
+    const data = await resp.json();
+    if (!data.data || !data.data[0]) {
+      throw new Error('OpenAI API error: ' + JSON.stringify(data));
+    }
+    return data.data[0].embedding;
+  } catch (error) {
+    if (retryCount < MAX_RETRIES) {
+      console.log(`   ⚠️ Embedding retry ${retryCount + 1}/${MAX_RETRIES}: ${error.message}`);
+      await new Promise(r => setTimeout(r, 2000 * (retryCount + 1)));
+      return getEmbedding(text, retryCount + 1);
+    }
+    throw error;
+  }
+}
+
+// Build embedding text — truncate ad_caption if total exceeds token limit
+function buildEmbeddingText(record) {
+  const adName = record.ad_name || '';
+  const adCaption = record.ad_caption || '';
+  const otherLen = adName.length + 1; // +1 for space
+  const captionBudget = Math.max(0, MAX_TEXT_CHARS - otherLen);
+  const trimmedCaption = adCaption.length > captionBudget
+    ? adCaption.substring(0, captionBudget)
+    : adCaption;
+  const parts = [adName, trimmedCaption].filter(Boolean);
+  return parts.join(' ') || 'empty';
+}
+
 // Ensure index exists
 async function ensureIndex() {
   try {
@@ -38,19 +79,39 @@ async function ensureIndex() {
         index: INDEX_NAME,
         body: {
           settings: {
+            'index.knn': true,
             number_of_shards: 1,
             number_of_replicas: 0,
-            refresh_interval: '30s'
+            refresh_interval: '30s',
+            analysis: {
+              analyzer: {
+                thai_analyzer: {
+                  type: 'custom',
+                  tokenizer: 'icu_tokenizer',
+                  filter: ['lowercase']
+                }
+              }
+            }
           },
           mappings: {
             properties: {
               id: { type: 'keyword' },
               keyword: { type: 'keyword' },
               ad_id: { type: 'keyword' },
-              ad_name: { type: 'text' },
-              ad_caption: { type: 'text' },
-              ad_risk_reason: { type: 'text' },
-              created_at: { type: 'date' }
+              ad_name: { type: 'text', analyzer: 'thai_analyzer' },
+              ad_caption: { type: 'text', analyzer: 'thai_analyzer' },
+              ad_risk_reason: { type: 'text', analyzer: 'thai_analyzer' },
+              collected_at: { type: 'date' },
+              created_at: { type: 'date' },
+              embedding: {
+                type: 'knn_vector',
+                dimension: 1536,
+                method: {
+                  name: 'hnsw',
+                  space_type: 'cosinesimil',
+                  engine: 'faiss'
+                }
+              }
             }
           }
         }
@@ -92,10 +153,25 @@ async function dynamicMicroBatch(records, filename) {
   for (let i = 0; i < records.length; i += finalBatchSize) {
     const batch = records.slice(i, i + finalBatchSize);
     
-    const bulkBody = batch.flatMap(record => [
-      { index: { _index: INDEX_NAME, _id: record.id.toString() } },
-      record
-    ]);
+    // Generate embeddings for each record
+    const bulkBody = [];
+    for (const record of batch) {
+      let embedding = null;
+      if (OPENAI_API_KEY) {
+        try {
+          const text = buildEmbeddingText(record);
+          embedding = await getEmbedding(text);
+        } catch (err) {
+          console.error(`⚠️ Embedding failed for record ${record.id}: ${err.message}`);
+        }
+      }
+      bulkBody.push({ index: { _index: INDEX_NAME, _id: record.id.toString() } });
+      if (embedding) {
+        bulkBody.push({ ...record, embedding });
+      } else {
+        bulkBody.push(record);
+      }
+    }
     
     try {
       const response = await osClient.bulk({ body: bulkBody });
